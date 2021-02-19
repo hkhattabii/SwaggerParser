@@ -6,7 +6,9 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
+import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -29,7 +31,10 @@ public class ComponentGenerator {
 
         for (String pathName : paths.keySet()) {
             PathItem path = paths.get(pathName);
+            initComponents(path.getGet(), "GET", pathName);
+            initComponents(path.getPost(), "POST", pathName);
             initComponents(path.getPut(), "PUT", pathName);
+            initComponents(path.getDelete(), "DELETE", pathName);
         }
 
         return this;
@@ -38,47 +43,12 @@ public class ComponentGenerator {
     private void initComponents(Operation operation, String operationName, String pathName) {
         if (operation != null) {
 
-            Set<String> requestContents = new HashSet<>();
-            Set<String> responseContents = new HashSet<>();
-            Set<String> securities = new HashSet<>();
-            if (operation.getRequestBody() != null && operation.getRequestBody().getContent() != null) {
-                requestContents = operation.getRequestBody().getContent().keySet();
-                if (requestContents == null) {
-                    responseContents = new HashSet<>();
-                }
-            }
-            if (operation.getResponses() != null) {
-                ApiResponses responses = operation.getResponses();
-                for (String key : responses.keySet()) {
-                    if (responses.get(key).getContent() != null) {
-                        responseContents = responses.get(key).getContent().keySet();
-                        if (responseContents == null) {
-                            responseContents = new HashSet<>();
-                        }
-                    }
-                }
-            }
-            if (operation.getParameters() != null) {
-                securities = operation.getParameters().stream().map(parameter -> {
-                    if (parameter.getIn() != null && parameter.getIn().equals("header")) {
-                        return parameter.getName();
-                    }
-                    return null;
-                }).filter(security -> security != null).collect(Collectors.toSet());
-            }
-            if (operation.getSecurity() != null) {
-                if (securities != null) {
-                    securities.addAll(operation.getSecurity().stream().map(securityRequirement -> (String) securityRequirement.keySet().toArray()[0]).collect(Collectors.toSet()));
-                } else {
-                    securities = operation.getSecurity().stream().map(securityRequirement -> (String) securityRequirement.keySet().toArray()[0]).collect(Collectors.toSet());
-                }
-            }
-
+            Set<String> securities = getSecurities(operation.getParameters(), operation.getSecurity());
+            Set<String> requestContents = getRequestContents(operation.getRequestBody());
+            Set<String> responseContents = getResponseContents(operation.getResponses());
 
             try {
-
                 List<String> names = generateName(securities, requestContents, responseContents);
-
                 if (!names.isEmpty()) {
                     for (String name : names) {
                         createComponent(name, operation, operationName, pathName);
@@ -86,7 +56,6 @@ public class ComponentGenerator {
                 } else {
                     createComponent(null, operation, operationName, pathName);
                 }
-
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -94,9 +63,45 @@ public class ComponentGenerator {
 
         System.out.println(configurations);
     }
-    
-    private void createComponent(String name, Operation operation,String operationName, String pathName) {
 
+
+    private Set<String> getSecurities(List<io.swagger.v3.oas.models.parameters.Parameter> parameters, List<SecurityRequirement> securitiesList) {
+        Set<String> securities = new HashSet<>();
+        if (parameters != null) {
+            securities = parameters.stream().map(parameter -> {
+                if (parameter.getIn() != null && parameter.getIn().equals("header")) {
+                    return parameter.getName();
+                }
+                return null;
+            }).filter(value -> value != null).collect(Collectors.toSet());
+        }
+        if (securitiesList != null) {
+            if (securities != null) {
+                securities.addAll(securitiesList.stream().map(securityRequirement -> (String) securityRequirement.keySet().toArray()[0]).collect(Collectors.toSet()));
+            }
+        }
+        return securities;
+    }
+
+    private Set<String> getRequestContents(RequestBody requestBody) {
+        if (requestBody != null && requestBody.getContent() != null) {
+            return requestBody.getContent().keySet();
+        }
+        return new HashSet<>();
+    }
+
+    private Set<String> getResponseContents(ApiResponses apiResponses) {
+        if (apiResponses!= null) {
+            for (String key : apiResponses.keySet()) {
+                if (apiResponses.get(key).getContent() != null && (key.equals("200") || key.equals("default"))) {
+                    return apiResponses.get(key).getContent().keySet();
+                }
+            }
+        }
+        return new HashSet<>();
+    }
+
+    private void createComponent(String name, Operation operation,String operationName, String pathName) {
         String componentName = "";
         if (name != null) {
             componentName = operation.getOperationId().concat(String.format(".%s", formatName(name)));
@@ -111,53 +116,64 @@ public class ComponentGenerator {
         Parameter connection = new Parameter("connection", connectionName);
         List<Parameter> params = new ArrayList();
 
-        HashMap<String, String> headers = new HashMap<>();
+        HashMap<String, String> additionnalParams = getAdditionalParams(operation.getParameters());
+
 
         if (name != null) {
             try {
                 List<String> parts = new LinkedList<>(Arrays.asList(name.split("\\.")));
-                headers = createHeaders(parts.remove(0), parts, headers, 1);
+                additionnalParams.putAll(createHeaders(parts.remove(0), parts, additionnalParams, 1));
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
 
 
-        for (String key : headers.keySet()) {
-            params.add(new Parameter(key, headers.get(key)));
+        for (String key : additionnalParams.keySet()) {
+            params.add(new Parameter(key, additionnalParams.get(key)));
         }
 
         params.addAll(Arrays.asList(endPoint, type, connection));
-        Collections.reverse(params);
         Component component = new Component(componentName, componentDescription, componentType, componentVersion, params);
         configurations.add(new Configuration("Component", component));
     }
 
-    private HashMap<String, String> createHeaders(String name, List<String> names, HashMap<String, String> headers, Integer position) throws Exception {
+    private HashMap<String, String> getAdditionalParams(List<io.swagger.v3.oas.models.parameters.Parameter> parameters) {
+        HashMap<String, String> additionalParams = new HashMap<>();
+        if (parameters != null) {
+            parameters.forEach(parameter -> {
+                if (parameter.getIn() != null && parameter.getIn().equals("query")) {
+                    String parameterName = parameter.getName();
+                    additionalParams.put("queryparam.1", String.format("%s, #%s#", parameterName, parameterName));
+                }
+            });
+        }
+        return additionalParams;
+    }
 
+    private HashMap<String, String> createHeaders(String name, List<String> names, HashMap<String, String> additionnalParams, Integer position) throws Exception {
 
         if (name.equals("_") && !names.isEmpty()) {
-            return createHeaders(names.remove(0), names, headers, position);
+            return createHeaders(names.remove(0), names, additionnalParams, position);
         } else {
             if (name.contains("key")) {
-                headers.put(String.format("header.%s", position), String.format("X-API-Key, %s","#api.key#"));
+                additionnalParams.put(String.format("header.%s", position), String.format("X-API-Key, %s","#api.key#"));
             } else if (name.contains("auth")) {
-                headers.put(String.format("header.%s", position), String.format("Authorization,Bearer %s","#token#"));
+                additionnalParams.put(String.format("header.%s", position), String.format("Authorization,Bearer %s","#token#"));
             }
             else {
                 List<String> parts = new LinkedList<>(Arrays.asList(name.split("\\/")));
                 if (parts.get(0).equals("REQ")) {
-                    headers.put(String.format("header.%s", position), String.format("Content-Type, %s", deserializeContentName(parts.get(1))));
+                    additionnalParams.put(String.format("header.%s", position), String.format("Content-Type, %s", deserializeContentName(parts.get(1))));
                 } else if (parts.get(0).equals("RES")) {
-                    headers.put(String.format("header.%s", position), String.format("Accept, %s", deserializeContentName(parts.get(1))));
+                    additionnalParams.put(String.format("header.%s", position), String.format("Accept, %s", deserializeContentName(parts.get(1))));
                 }
             }
-
         }
         if (names.isEmpty()) {
-            return headers;
+            return additionnalParams;
         } else {
-            return createHeaders(names.remove(0), names, headers, ++position);
+            return createHeaders(names.remove(0), names, additionnalParams, ++position);
         }
     }
 
@@ -184,10 +200,8 @@ public class ComponentGenerator {
                                 names.add(name);
                             }
                         } else {
-                            for (String responseContent : responseContents) {
-                                name = security + ".REQ/" + serializeContentName(requestContent);
-                                names.add(name);
-                            }
+                            name = security + ".REQ/" + serializeContentName(requestContent);
+                            names.add(name);
                         }
 
                     }
@@ -247,7 +261,7 @@ public class ComponentGenerator {
             return partContentName.get(1);
         }
 
-        return "ouoh";
+        return "";
     }
 
     private String serializeContentName(String contentName) throws Exception {

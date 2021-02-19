@@ -29,7 +29,7 @@ public class ConnectionGenerator {
             Parameter port = new Parameter("port", getPort((url)));
             Parameter protocol = new Parameter("tls", getProtocol(url));
             Parameter baseUrl = new Parameter("baseUrl", getBaseUrl(url));
-            String name = openAPI.getInfo().getTitle() + (protocol.getValue() == "Y" ? " HTTPS" : " HTTP");
+            String name = openAPI.getInfo().getTitle();
             String env = fakeEnvs[hosts.indexOf(host)];
             Connection connection = new Connection(name, description, "http", env, Arrays.asList(host, port, protocol, baseUrl));
             return new Configuration("Connection", connection);
@@ -64,7 +64,5 @@ public class ConnectionGenerator {
             return null;
         }
     }
-
-
 
 }
