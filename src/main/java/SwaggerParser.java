@@ -21,10 +21,13 @@ public class SwaggerParser {
         if (result.getMessages() != null) result.getMessages().forEach(System.err::println); // validation errors and warnings
 
         if (openAPI != null) {
+
             ComponentGenerator componentGenerator = new ComponentGenerator();
             componentGenerator.parse(openAPI).generate("component_configs.json", false);
             ConnectionGenerator connectionGenerator = new ConnectionGenerator();
             connectionGenerator.parse(openAPI, fakeEnvs).generate(true);
+
+
 
         }
     }
