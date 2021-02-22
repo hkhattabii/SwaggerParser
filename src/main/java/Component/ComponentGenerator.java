@@ -79,12 +79,10 @@ public class ComponentGenerator {
                     return parameter.getName();
                 }
                 return null;
-            }).filter(value -> value != null).collect(Collectors.toSet());
+            }).filter(Objects::nonNull).collect(Collectors.toSet());
         }
         if (securitiesList != null) {
-            if (securities != null) {
-                securities.addAll(securitiesList.stream().map(securityRequirement -> (String) securityRequirement.keySet().toArray()[0]).collect(Collectors.toSet()));
-            }
+            securities.addAll(securitiesList.stream().map(securityRequirement -> (String) securityRequirement.keySet().toArray()[0]).collect(Collectors.toSet()));
         }
         return securities;
     }
@@ -121,22 +119,27 @@ public class ComponentGenerator {
     }
 
     private List<Parameter> getInfos(String pathName, PathItem.HttpMethod operationName) {
-        List<Parameter> infos = new ArrayList(){{
+        return new ArrayList(){{
             add(new Parameter("endpoint", pathName));
             add(new Parameter("type", operationName.name()));
             add(new Parameter("connection", connectionName));
         }};
-        return infos;
     }
+
     private List<Parameter> getQueryParams(List<io.swagger.v3.oas.models.parameters.Parameter> parameters) {
+        Integer counter = 1;
         List<Parameter> queryParams = new ArrayList();
+
+
         if (parameters != null) {
-            parameters.forEach(parameter -> {
+            for (int i = 0; i < parameters.size(); i++ ) {
+                io.swagger.v3.oas.models.parameters.Parameter parameter = parameters.get(i);
                 if (parameter.getIn() != null && parameter.getIn().equals("query")) {
                     String parameterName = parameter.getName();
-                    queryParams.add(new Parameter("queryparam.1", String.format("%s, #%s#", parameterName, parameterName)));
+                    queryParams.add(new Parameter(String.format("queryParam.%s", counter), String.format("%s, #%s#", parameterName, parameterName)));
+                    counter += 1;
                 }
-            });
+            }
         }
         return queryParams;
     }
@@ -170,10 +173,9 @@ public class ComponentGenerator {
             }
 
         }
-
         return parameters;
-
     }
+
     private List<HashMap<String, String>>  generateName(Set<String> securities, Set<String> requestContents, Set<String> responseContents) {
         List<HashMap<String, String>> names = new ArrayList<>();
 
